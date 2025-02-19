@@ -1,9 +1,9 @@
-from fastapi import FastAPI
+from fastapi import FastAPI ,HTTPException
 from typing import List
 from pydantic import BaseModel
 from motor.motor_asyncio import AsyncIOMotorClient
 import certifi
-
+from bson import ObjectId  # ✅ Import ObjectId for MongoDB
 # rabbiking00
 # rQauiItdlNdL7hdX
 
@@ -48,3 +48,23 @@ async def getdata():
         user['_id'] = str(user['_id'])
         users.append(user)
     return users
+
+
+@app.put("/putdata/{id}")
+async def putdata(id:str, data:Data):   
+    if not ObjectId.is_valid(id):
+        raise HTTPException(status_code= 400 ,detail='Invalid objectid values')
+    user_data=data.dict()
+    result=await app.collection.update_one({"_id":ObjectId(id)},{"$set":user_data})
+    if result.matched_count==0:
+        raise HTTPException(status_code= 404,detail="User not found")
+    return {"Message":"data update successfully"}
+
+@app.delete("/postdelete/{id}")
+async def deletedata(id:str):
+    if not ObjectId.is_valid(id):
+        raise HTTPException(status_code= 400, detail='Invalid object formate')
+    result = await app.collection.delete_one({"_id":ObjectId(id)})
+    if result.deleted_count ==0:
+        raise HTTPException(status_code= 404,detail='User not found')
+    return {"Message":"delete data successful"}
