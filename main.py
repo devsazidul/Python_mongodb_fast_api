@@ -2,13 +2,14 @@ from fastapi import FastAPI
 from typing import List
 from pydantic import BaseModel
 from motor.motor_asyncio import AsyncIOMotorClient
+import certifi
 
 # rabbiking00
 # rQauiItdlNdL7hdX
 
 app = FastAPI()
 
-MONGO_URL = "mongodb+srv://rabbiking00:<sazidul133>@cluster0.z6b9l.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+MONGO_URL = "mongodb+srv://sazidul:sazidul123@cluster0.z6b9l.mongodb.net/python?retryWrites=true&w=majority&ssl=true"
 DB_NAME = "mydatabase"
 COLLECTION_NAME = "user_data"
 
@@ -16,7 +17,7 @@ COLLECTION_NAME = "user_data"
 # MongoDB client initialization on startup
 @app.on_event("startup")
 async def startup_db():
-    app.client = AsyncIOMotorClient(MONGO_URL) 
+    app.client = AsyncIOMotorClient(MONGO_URL, tlsCAFile=certifi.where())  # Initialize once with SSL
     app.db = app.client[DB_NAME]
     app.collection = app.db[COLLECTION_NAME]
 
