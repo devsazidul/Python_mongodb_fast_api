@@ -1,7 +1,7 @@
 # (pip install fastapi uvicorn django stripe) Payment mathod installation package.
 import os
 from dotenv import load_dotenv
-from fastapi import FastAPI ,HTTPException
+from fastapi import Body, FastAPI ,HTTPException, Query
 from typing import List, Optional
 from pydantic import BaseModel
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -49,11 +49,12 @@ class PaymentData(BaseModel):
     amount: int
     currency: str ="usd"
     description: Optional[str] = None
-    card_number:str
-    exp_month:str
-    exp_year:str
-    cvc:str
 
+class CardDetails(BaseModel):
+    number: str
+    exp_month: int
+    exp_year: int
+    cvc: str
 
 
 @app.post("/postdata")
@@ -95,22 +96,11 @@ Payment_collection_name="payment"
 @app.post("/createpayment")
 async def create_payment_intent(payment: PaymentData):
     try:
-        payment_mathod=stripe.PaymentMethod.create(
-            type= "card",
-            card={
-                "number":payment.card_number,
-                "exp_month":payment.exp_month,
-                "exp_year":payment.exp_year,
-                "cvc":payment.cvc
-            },
-        )
         # Create a PaymentIntent
         intent = stripe.PaymentIntent.create(
             amount=payment.amount,  # Amount in cents
             currency=payment.currency,
             description=payment.description,
-            payment_method=payment_mathod.id,
-            confirm=True,
         )
         # Store payment intent details in MongoDB
         payment_record = {
@@ -118,7 +108,6 @@ async def create_payment_intent(payment: PaymentData):
             "amount": payment.amount,
             "currency": payment.currency,
             "status": intent.status,
-            "card_number":payment.card_number,
         }
         await app.db["Payment_collection_name"].insert_one(payment_record)
         return {"client_secret": intent.client_secret}
@@ -127,13 +116,23 @@ async def create_payment_intent(payment: PaymentData):
 
 
 @app.post("/paymentdone")
-async def confirm_payment(payment_intent_id: str):
+async def confirm_payment(payment_intent_id: str, card_details: CardDetails):
     try:
-        # Retrieve the PaymentIntent
-        intent = stripe.PaymentIntent.retrieve(payment_intent_id    )
-        if intent.status == "succeeded":
-            # Update payment status in MongoDB
-            await app.collection.update_one(
+        payment_method = stripe.PaymentMethod.create(
+            type="card",
+            card={
+                "number": card_details.number,
+                "exp_month": card_details.exp_month,
+                "exp_year": card_details.exp_year,
+                "cvc": card_details.cvc,
+            },
+        )
+        confirmed_intent = stripe.PaymentIntent.confirm(
+            payment_intent_id,
+            payment_method=payment_method.id,
+        )
+        if confirmed_intent.status == "succeeded":
+            await app.db[Payment_collection_name].update_one(
                 {"payment_intent_id": payment_intent_id},
                 {"$set": {"status": "succeeded"}}
             )
@@ -142,3 +141,39 @@ async def confirm_payment(payment_intent_id: str):
             return {"status": "failed", "message": "Payment not succeeded."}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+# @app.post("/paymentdone")
+# async def confirm_payment(
+#     payment_intent_id: str = Query(..., description="The ID of the PaymentIntent"),
+#     card_details: dict = Body(..., description="Card details including number, exp_month, exp_year, and cvc"),
+# ):
+#     try:
+#         # Create a PaymentMethod using the card details
+#         payment_method = stripe.PaymentMethod.create(
+#             type="card",
+#             card={
+#                 "number": card_details["number"],
+#                 "exp_month": card_details["exp_month"],
+#                 "exp_year": card_details["exp_year"],
+#                 "cvc": card_details["cvc"],
+#             },
+#         )
+
+#         # Confirm the PaymentIntent with the PaymentMethod
+#         confirmed_intent = stripe.PaymentIntent.confirm(
+#             payment_intent_id,
+#             payment_method=payment_method.id,
+#         )
+
+#         # Check if the payment was successful
+#         if confirmed_intent.status == "succeeded":
+#             # Update payment status in MongoDB
+#             await app.db[Payment_collection_name].update_one(
+#                 {"payment_intent_id": payment_intent_id},
+#                 {"$set": {"status": "succeeded"}}
+#             )
+#             return {"status": "success", "message": "Payment succeeded!"}
+#         else:
+#             return {"status": "failed", "message": "Payment not succeeded."}
+#     except Exception as e:
+#         raise HTTPException(status_code=400, detail=str(e))
